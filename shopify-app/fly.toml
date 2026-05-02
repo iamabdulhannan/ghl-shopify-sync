@@ -1,0 +1,53 @@
+# Fly.io deployment config — uses SQLite on a persistent volume.
+# This is the simplest path for a small Shopify app: no separate DB,
+# no per-month DB cost, and "good enough" until ~10k merchants.
+#
+# Setup:
+#   1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+#   2. From this directory: `fly launch --copy-config --no-deploy`
+#      (when asked: pick a unique app name, region, NO redis, NO postgres)
+#   3. Create the volume: `fly volumes create data --size 1 --region <your-region>`
+#   4. Set secrets:
+#        fly secrets set \
+#          SHOPIFY_API_KEY=... \
+#          SHOPIFY_API_SECRET=... \
+#          SCOPES=read_orders,read_customers,read_products \
+#          SHOPIFY_APP_URL=https://<app-name>.fly.dev \
+#          DATABASE_URL=file:/data/prod.sqlite
+#   5. Deploy: `fly deploy`
+#   6. Update shopify.app.toml `application_url` to https://<app-name>.fly.dev
+#   7. Run `npm run deploy` (Shopify CLI) to push the new app URL to Partner Dashboard
+
+app = "ghl-sync-shopify-CHANGE-ME"
+primary_region = "iad"
+kill_signal = "SIGINT"
+kill_timeout = "5s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  NODE_ENV = "production"
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

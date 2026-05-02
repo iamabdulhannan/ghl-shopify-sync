@@ -1,0 +1,60 @@
+// Prisma schema — sessions + per-shop GHL config + sync logs
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Required by @shopify/shopify-app-session-storage-prisma
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+// Per-shop GHL configuration — each merchant pastes their own credentials
+model ShopConfig {
+  id              String   @id @default(cuid())
+  shop            String   @unique
+  ghlApiKey       String
+  ghlLocationId   String
+  vipThreshold    Int      @default(500)
+  highValueThreshold Int   @default(200)
+  enableCategoryTags Boolean @default(true)
+  enableVendorTags Boolean  @default(true)
+  enableOpportunities Boolean @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Audit log of every sync attempt — drives the dashboard
+model SyncLog {
+  id          String   @id @default(cuid())
+  shop        String
+  topic       String
+  resourceId  String
+  status      String   // "ok" | "error" | "skipped"
+  ghlContactId String?
+  errorMessage String?
+  payloadSize Int?
+  createdAt   DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([shop, status])
+}

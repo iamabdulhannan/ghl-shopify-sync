@@ -1,0 +1,7 @@
+name = "ghl-sync"
+roles = ["frontend", "backend"]
+webhooks_path = "/webhooks/sync"
+
+[commands]
+predev = "npm run setup"
+dev = "npm exec remix vite:dev"
