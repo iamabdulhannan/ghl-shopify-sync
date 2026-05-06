@@ -18,7 +18,6 @@ services:
     name: ghl-sync-shopify
     runtime: node
     plan: starter
-    rootDir: shopify-app
     buildCommand: npm install && npm run build && npx prisma generate && npx prisma migrate deploy
     startCommand: npm run start
     healthCheckPath: /

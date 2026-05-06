@@ -1,9 +1,12 @@
 node_modules
-dist
+build
 .env
 .env.local
 *.log
 .DS_Store
-.idea
-.vscode
-coverage
+.cache
+.vite
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
+.shopify
+public/build

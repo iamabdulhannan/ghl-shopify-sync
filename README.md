@@ -1,132 +1,152 @@
-# GHL ↔ Shopify Sync (for Fashion Brands)
+# GHL Sync — Shopify App
 
-Open-source webhook bridge that syncs your **Shopify** store into **GoHighLevel (GHL)** CRM in real time. Built specifically for fashion & apparel brands — auto-tagging by category, VIP segmentation, repeat-buyer detection, and lifetime value tracking, all out of the box.
+Embedded Shopify app that syncs orders & customers into GoHighLevel CRM with smart auto-tagging. **$9.99/mo, 14-day free trial.**
 
-> ⚡ **Need a GHL account?** Start your free 14-day trial here → **[Get GoHighLevel](https://www.gohighlevel.com/?fp_ref=YOUR_AFFILIATE_ID)**
-> *Disclosure: this is an affiliate link. Using it supports the project at no extra cost to you.*
 
 ---
 
-## Why this exists
+## What's inside
 
-Most Shopify ↔ GHL connectors are paid SaaS at $29–$99/month per store. Fashion brands also need things off-the-shelf tools don't ship:
+```
+shopify-app/
+├── app/
+│   ├── shopify.server.ts          Shopify SDK + billing config
+│   ├── db.server.ts               Prisma client
+│   ├── entry.server.tsx           Remix SSR entry
+│   ├── root.tsx                   HTML shell
+│   ├── lib/
+│   │   ├── ghl.server.ts          Per-shop GHL client
+│   │   ├── fashion.server.ts      Tag rules
+│   │   ├── sync.server.ts         Order + customer → GHL pipeline
+│   │   └── types.ts
+│   └── routes/
+│       ├── _index/route.tsx       Public landing
+│       ├── auth.$.tsx             OAuth callback
+│       ├── auth.login/            Shop-domain login
+│       ├── app.tsx                Embedded App Bridge layout + billing gate
+│       ├── app._index.tsx         Dashboard (counts + recent activity)
+│       ├── app.settings.tsx       GHL credentials + tag thresholds
+│       ├── app.tags.tsx           Tag-rule reference page
+│       ├── webhooks.sync.tsx      orders/customers → GHL
+│       ├── webhooks.compliance.tsx GDPR (data_request, redact, shop/redact)
+│       ├── webhooks.app.uninstalled.tsx
+│       └── webhooks.app.scopes_update.tsx
+├── prisma/schema.prisma           Session, ShopConfig, SyncLog
+├── shopify.app.toml               App config (scopes, webhook subscriptions)
+├── shopify.web.toml               Process config
+├── vite.config.ts                 Remix + Vite
+├── package.json
+├── tsconfig.json
+├── Dockerfile
+└── .env.example
+```
 
-- **Category-based auto-tagging** (dresses, denim, accessories → automatic GHL tags)
-- **VIP & repeat-buyer segmentation** based on lifetime spend
-- **Custom fields** for marketing opt-in, currency, last-order metadata
-- **Self-hosted** — you own the data and pay zero per-contact fees
+## Run locally
 
-This tool gives you that, free, with code you control.
-
-## Features
-
-- ✅ Real-time sync of Shopify customers and orders → GHL contacts
-- ✅ HMAC-verified webhooks (production-safe, timing-safe comparison)
-- ✅ Automatic fashion-specific tagging: `vip`, `high-value`, `first-purchase`, `repeat-buyer`, `category-dresses`, `brand-acne-studios`, etc.
-- ✅ Creates GHL opportunities from paid orders for sales pipeline tracking
-- ✅ Custom fields: `shopify_customer_id`, `shopify_total_spent`, `shopify_orders_count`, last-order metadata
-- ✅ One-click deploy to Railway, Render, Fly.io, or Docker
-- ✅ TypeScript, structured logging (pino), zod-validated config
-- ✅ Fast webhook ack (200 in <100ms) so Shopify never retries
-
-## Quickstart
-
-### 1. Sign up for GoHighLevel
-
-If you don't have a GHL account yet, **[start your free 14-day trial here](https://www.gohighlevel.com/?fp_ref=YOUR_AFFILIATE_ID)**. The Starter plan ($97/mo) is enough — you need API access, which is included.
-
-### 2. Get your GHL API key
-
-In GHL: **Settings → Business Profile → API Keys**. Copy your **Location API Key** and your **Location ID**.
-
-### 3. Clone and configure
+👉 **See [RUN_LOCALLY.md](./RUN_LOCALLY.md) for the full step-by-step.** Summary:
 
 ```bash
-git clone https://github.com/iamabdalhannan/ghl-shopify-sync.git
-cd ghl-shopify-sync
-cp .env.example .env
-# Edit .env with your GHL credentials and a Shopify webhook secret (set in step 4)
-npm install
-npm run dev
+cd shopify-app
+npm install                                # done
+npm install -g @shopify/cli@latest         # one-time
+cp .env.example .env                       # edit with Client ID/Secret from Partner Dashboard
+npx prisma migrate dev --name init         # already done — DB at prisma/dev.sqlite
+npm run config:link                        # link to your Partner app
+npm run dev                                # opens tunnel, registers webhooks, prints install URL
 ```
 
-### 4. Set up Shopify webhooks
+## Deploying to production
 
-In Shopify admin: **Settings → Notifications → Webhooks**. Add webhooks pointing to your deployed URL:
+You have two production paths. **Pick one:**
 
-| Topic | URL |
-|---|---|
-| `orders/create` | `https://yourapp.com/webhooks/shopify/orders-create` |
-| `orders/paid` | `https://yourapp.com/webhooks/shopify/orders-paid` |
-| `customers/create` | `https://yourapp.com/webhooks/shopify/customers-create` |
-| `customers/update` | `https://yourapp.com/webhooks/shopify/customers-update` |
+### Path A — Fly.io with SQLite (simplest, cheapest)
 
-All webhooks use **JSON** format. Shopify will show you a **shared secret** once — paste it into your `.env` as `SHOPIFY_WEBHOOK_SECRET`.
+Best for: launch and first 1k merchants. Single command deploy. Persistent volume for SQLite.
 
-### 5. Deploy
-
-**Railway / Render / Fly.io:** push to GitHub, connect, set env vars from `.env.example`, deploy. That's it.
-
-**Docker:**
 ```bash
-docker build -t ghl-shopify-sync .
-docker run -p 3000:3000 --env-file .env ghl-shopify-sync
+brew install flyctl
+fly auth signup                                # or fly auth login
+cd shopify-app
+fly launch --copy-config --no-deploy           # uses fly.toml, pick app name & region
+fly volumes create data --size 1 --region <your-region>
+fly secrets set \
+  SHOPIFY_API_KEY=... \
+  SHOPIFY_API_SECRET=... \
+  SCOPES=read_orders,read_customers,read_products \
+  SHOPIFY_APP_URL=https://<app-name>.fly.dev \
+  DATABASE_URL=file:/data/prod.sqlite
+fly deploy
 ```
 
-**Local testing with Shopify webhooks:** use `ngrok http 3000` or `cloudflared tunnel` to expose your dev server.
+Then update `shopify.app.toml`:
+- `application_url = "https://<app-name>.fly.dev"`
 
-## How fashion-specific tagging works
-
-When an order webhook fires, the tool inspects the payload and applies tags automatically:
-
-| Rule | Tag |
-|---|---|
-| Order total ≥ $500 | `vip` |
-| Order total ≥ $200 | `high-value` |
-| Each line item `product_type` | `category-<type>` (e.g. `category-dresses`) |
-| Each line item `vendor` | `brand-<vendor>` |
-| Customer's first ever order | `first-purchase` |
-| Customer's 2nd+ order | `repeat-buyer` |
-| Customer accepts marketing | `marketing-opt-in` |
-
-Use these tags in GHL to trigger workflows: VIP welcome SMS, abandoned-cart sequences, category-specific drip campaigns, restock alerts.
-
-The rules are a single function — customize them in [`src/mapping/fashion.ts`](src/mapping/fashion.ts).
-
-## Architecture
-
-```
-Shopify webhook
-    ↓ (HMAC-verified, raw body)
-  server.ts ──→ handlers/orderCreated.ts ──→ mapping/fashion.ts
-                                          ──→ ghl/client.ts ──→ GHL REST API
+Then push the new URL to your Partner Dashboard:
+```bash
+npm run deploy
 ```
 
-- HMAC verification uses `crypto.timingSafeEqual` to prevent timing attacks.
-- Webhooks are acknowledged in <100ms; processing happens after `res.send()` so Shopify never retries on slow GHL responses.
-- All env vars validated at boot via zod — fails fast, never half-configured.
+**Cost:** ~$0–5/mo on Fly's hobby tier.
 
-## Roadmap
+### Path B — Render with Postgres (managed DB, auto-deploy)
 
-- [ ] Inventory webhook → "back in stock" SMS triggers
-- [ ] Abandoned-checkout sync → GHL workflow trigger
-- [ ] Bidirectional sync (GHL contact updates → Shopify customer notes)
-- [ ] WooCommerce connector
-- [ ] Lifecycle PLM / Centric PLM connector for techpack workflows
-- [ ] Optional persistence layer (SQLite/Postgres) for retries & idempotency
+Best for: when you outgrow SQLite (~5k+ merchants) or want managed Postgres.
 
-## Contributing
+**Schema change required first:**
+```diff
+# prisma/schema.prisma
+datasource db {
+- provider = "sqlite"
++ provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
 
-PRs welcome. If you build a connector for another platform (WooCommerce, BigCommerce, Magento), open an issue first so we can align on the mapping interface.
+Commit + push. Then:
+
+1. Render dashboard → **Blueprints** → connect this repo
+2. `render.yaml` is auto-detected → creates web service + Postgres DB
+3. Add secrets in dashboard: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL=https://<service>.onrender.com`
+4. After first deploy, update `shopify.app.toml` `application_url` to the Render URL and run `npm run deploy`
+
+**Cost:** $7/mo web + $7/mo Postgres = **$14/mo** (Render starter tiers).
+
+### Path C — anywhere else (Railway, Heroku, your own VPS)
+
+The Dockerfile in this repo is generic — any platform that runs Docker can host it. Same env vars apply.
+
+## Submit to App Store
+
+When you're ready to make money:
+
+1. **Test thoroughly** on a fresh dev store — install → configure → place orders → uninstall → reinstall
+2. **Add app listing assets** in Partner Dashboard:
+   - App icon (1200×1200 PNG)
+   - 3–5 screenshots (1600×900)
+   - Demo video (90 sec, optional but boosts approval)
+   - App description
+   - Pricing: **Recurring**, $9.99/mo, 14-day trial
+3. **Privacy policy URL** (required) — host on yourdomain.com/privacy
+4. **Submit for review** — typically 4–8 weeks
+5. After approval: live in the Shopify App Store, indexed by Google
+
+## Pricing math
+
+| Installs (paying) | Monthly revenue | After Shopify fee* | Annual |
+|---|---|---|---|
+| 50 | $499 | $499 (under $1M) | $5,988 |
+| 200 | $1,998 | $1,998 | $23,976 |
+| 500 | $4,995 | $4,995 | $59,940 |
+| 2,000 | $19,980 | $16,983 (15% over $1M) | $203,796 |
+
+*Shopify takes 0% on your first $1M lifetime app revenue, then 15%.
+
+## Why merchants pay
+
+- **Self-built integrations cost $1,500–5,000** to commission
+- **Generic Zapier setups cost $30–100/mo + per-task fees**
+- This app: **$9.99/mo flat**, no per-contact fees, fashion-aware out of the box
 
 ## License
 
-MIT — use it commercially, modify it, ship it inside your agency offering.
-
-## Support the project
-
-If this tool saved you a SaaS subscription, the best way to give back is to use **[this GHL signup link](https://www.gohighlevel.com/?fp_ref=YOUR_AFFILIATE_ID)** when you start your trial. That's how the project funds itself.
-
----
-
-**Built by [Abdul Hannan](https://linkedin.com/in/iamabdalhannan)** — Senior Full-Stack Engineer specializing in fashion-tech, PLM systems, and AI-enabled SaaS. Reach out on LinkedIn for custom GHL/Shopify/PLM integration work.
+This repo is **proprietary**. All rights reserved.
